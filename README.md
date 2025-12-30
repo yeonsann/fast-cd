@@ -1,5 +1,5 @@
 # fcd
-`fcd` is a **minimal TUI directory picker** written in **Zig**.  
+`fcd` is a **minimal TUI directory picker**.  
 It lets you quickly browse directories and change your shell’s working directory.
 
 
@@ -65,10 +65,6 @@ fcd
 | `Esc` | Cancel filter |
 | `q` | Quit |
 
-
 ## Requirements
 - ncurses (`ncursesw`)
 - Zig **0.15.x**
-
-## License
-MIT 
