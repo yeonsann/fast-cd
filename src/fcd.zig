@@ -115,7 +115,6 @@ fn drawEntries(
         _ = c.move(@as(c_int, @intCast(y)), 0);
         _ = c.clrtoeol();
 
-
         if (idx == selected) _ = c.attron(c.A_REVERSE);
         const name = entries.items[idx];
         const n = min(width, name.len);
@@ -267,14 +266,12 @@ pub fn main() !void {
                 ui.filtering = true;
                 ui.filter_len = 0;
             },
-
-            8 => { // Ctrl+H
+            'H', 8 => { // Ctrl+H
                 ui.show_hidden = !ui.show_hidden;
                 try reloadEntries(allocator, &entries, &ui);
                 selected = 0;
                 scroll = 0;
             },
-
             '\n', c.KEY_ENTER => {
                 if (entries.items.len == 0) continue;
                 const target = entries.items[selected];
