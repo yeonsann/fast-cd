@@ -8,9 +8,7 @@ I was tired of cd-ing to directories :)
 
 
 ## Installation
-
 ### Build
-
 ```sh
 zig build-exe fcd.zig -lc -lncursesw
 ```
@@ -23,7 +21,6 @@ mv fcd ~/.local/bin/
 
 
 ## Shell setup (required)
-
 Add this function to your shell config (`~/.bashrc`, `~/.zshrc`, etc.):
 
 ```sh
@@ -37,7 +34,6 @@ fcd() {
 ```
 
 Reload your shell:
-
 ```sh
 source ~/.bashrc
 ```
@@ -46,13 +42,11 @@ source ~/.bashrc
 > You must use the shell function.
 
 ## Usage
-
 ```sh
 fcd
 ```
 
 ### Key bindings
-
 | Key | Action |
 |----|-------|
 | `j` / `↓` | Move down |
