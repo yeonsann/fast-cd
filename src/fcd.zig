@@ -9,7 +9,6 @@ const c = @cImport({
 const CdFile = "/tmp/zig-tui-cd";
 
 // ================= State =================
-
 const UiState = struct {
     show_hidden: bool = false,
 
@@ -82,7 +81,6 @@ fn reloadEntries(
 }
 
 // ================= Drawing =================
-
 fn clearRegion(start: usize, rows: usize) void {
     var i: usize = 0;
     while (i < rows) : (i += 1) {
@@ -154,7 +152,7 @@ fn drawStatusBar(
         _ = c.mvprintw(
             @as(c_int, @intCast(row)),
             0,
-            " j/k ↑↓ enter open  ctrl+h hidden  / filter  q quit ",
+            " j/k down/up | enter open | shift+h hidden | / filter | q quit ",
         );
 
         var buf: [64]u8 = undefined;
@@ -261,7 +259,6 @@ pub fn main() !void {
             'j', c.KEY_DOWN => {
                 if (selected + 1 < entries.items.len) selected += 1;
             },
-
             '/' => {
                 ui.filtering = true;
                 ui.filter_len = 0;
@@ -275,7 +272,10 @@ pub fn main() !void {
             '\n', c.KEY_ENTER => {
                 if (entries.items.len == 0) continue;
                 const target = entries.items[selected];
-                if (!isDir(target)) continue;
+                if (!isDir(target)) {
+                    
+                    continue;
+                }
 
                 if (c.chdir(target.ptr) == 0) {
                     try reloadEntries(allocator, &entries, &ui);
