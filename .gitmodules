@@ -1,0 +1,3 @@
+[submodule "libs/zigtui"]
+	path = libs/zigtui
+	url = https://github.com/yeonsann/zigtui.git
