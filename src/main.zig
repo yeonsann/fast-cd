@@ -12,11 +12,11 @@ fn min(a: usize, b: usize) usize {
     return if (a < b) a else b;
 }
 
-fn initialPath() []const u8 {
-    return if (builtin.os.tag == .windows)
-        "C:\\"
-    else
-        "/";
+fn initialPath(allocator: std.mem.Allocator) ![]const u8 {
+    const cwd = try std.process.getCwdAlloc(allocator);
+    // defer allocator.free(cwd);
+
+    return cwd;
 }
 
 const AppState = struct {
@@ -30,7 +30,9 @@ const AppState = struct {
 
     pub fn init(allocator: std.mem.Allocator) !AppState {
         var path = try std.ArrayList(u8).initCapacity(allocator, 256);
-        try path.appendSlice(allocator, initialPath());
+        const initial_path = try initialPath(allocator);
+        defer allocator.free(initial_path);
+        try path.appendSlice(allocator, initial_path);
 
         const dir = try std.fs.openDirAbsolute(path.items, .{ .iterate = true });
 
@@ -102,13 +104,25 @@ const AppState = struct {
     pub fn goUp(self: *AppState) !void {
         const parent = std.fs.path.dirname(self.cwd_path.items) orelse return;
 
-        self.cwd_path.clearRetainingCapacity();
-        try self.cwd_path.appendSlice(self.allocator, parent);
+        self.cwd_path.shrinkRetainingCapacity(parent.len);
 
         self.cwd.close();
         self.cwd = try std.fs.openDirAbsolute(self.cwd_path.items, .{ .iterate = true });
 
         try self.loadDirectories();
+    }
+
+    pub fn closeAndSwitchToDir(self: *AppState) !void {
+        // try std.process.chdir(self.cwd_path.items);
+        // try self.cwd.setAsCwd();
+        // self.cwd.close();
+        // self.cwd = try std.fs.cwd().openDir(".", .{ .iterate = true });
+        var file = try std.fs.createFileAbsolute("/tmp/fcd_move_dir", .{ .truncate = true });
+        defer file.close();
+
+        try file.writeAll("cd \"");
+        try file.writeAll(self.cwd_path.items);
+        try file.writeAll("\"\n");
     }
 };
 
@@ -140,6 +154,11 @@ pub fn main() !void {
                     if (c == 'q') running = false;
                     if (c == 'j') state.select(.Up);
                     if (c == 'k') state.select(.Down);
+                    if (c == 'o') {
+                        try state.closeAndSwitchToDir();
+                        running = false;
+                        // state.select(.Down);
+                    }
                 },
                 .enter => try state.enterSelected(),
                 .backspace => try state.goUp(),
@@ -165,7 +184,7 @@ pub fn main() !void {
                 const block = tui.widgets.Block{
                     .title = app.cwd_path.items,
                     .borders = tui.widgets.Borders.all(),
-                    .border_style = tui.style.Style{ .fg = .green },
+                    .border_style = tui.style.Style{ .fg = .white },
                 };
                 block.render(area, buf);
 
