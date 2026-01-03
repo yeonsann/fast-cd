@@ -31,6 +31,7 @@ const AppState = struct {
 
     directories: std.ArrayList(DirectoryItem),
     selected: usize = 0,
+    showHidden: bool = false,
 
     pub fn init(allocator: std.mem.Allocator) !AppState {
         var path = try std.ArrayList(u8).initCapacity(allocator, 256);
@@ -71,11 +72,15 @@ const AppState = struct {
         var it = self.cwd.iterate();
         while (try it.next()) |entry| {
             if (entry.kind == .directory) {
-                if (entry.name.len > 0 and entry.name[0] == '.') {
-                    continue;
+                if (!self.showHidden) {
+                    if (entry.name.len > 0 and entry.name[0] == '.') {
+                        continue;
+                    } else {
+                        const name = try self.allocator.dupe(u8, entry.name);
+                        try self.directories.append(self.allocator, .{ .name = name });
+                    }
                 } else {
                     const name = try self.allocator.dupe(u8, entry.name);
-
                     try self.directories.append(self.allocator, .{ .name = name });
                 }
             }
@@ -129,6 +134,14 @@ const AppState = struct {
         try self.loadDirectories();
     }
 
+    pub fn toggleHiddenDirectories(self: *AppState) !void {
+        self.showHidden = !self.showHidden;
+        self.cwd.close();
+        self.cwd = try std.fs.openDirAbsolute(self.cwd_path.items, .{ .iterate = true });
+
+        try self.loadDirectories();
+    }
+
     pub fn closeAndSwitchToDir(self: *AppState) !void {
         // try std.process.chdir(self.cwd_path.items);
         // try self.cwd.setAsCwd();
@@ -171,6 +184,9 @@ pub fn main() !void {
                     if (c == 'q') running = false;
                     if (c == 'j') state.select(.Up);
                     if (c == 'k') state.select(.Down);
+                    if (c == 'H') {
+                        try state.toggleHiddenDirectories();
+                    }
                     if (c == 'o') {
                         try state.closeAndSwitchToDir();
                         running = false;
