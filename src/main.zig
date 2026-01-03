@@ -170,13 +170,14 @@ pub fn main() !void {
                     if (c == 'q') running = false;
                     if (c == 'j') state.select(.Up);
                     if (c == 'k') state.select(.Down);
+
                     if (c == 'H') {
                         try state.toggleHiddenDirectories();
                     }
+
                     if (c == 'o') {
                         try state.closeAndSwitchToDir();
                         running = false;
-                        // state.select(.Down);
                     }
                 },
                 .enter => try state.enterSelected(),
@@ -206,6 +207,11 @@ pub fn main() !void {
                     .border_style = tui.style.Style{ .fg = .white },
                 };
                 block.render(area, buf);
+
+                const footer_y = area.y + area.height - 1;
+                const help = "[O] Change CWD [j/k] Navigate [Enter/Return] Enter / Leave Directory [H] Toggle hidden files [Q] Quit ";
+                const help_x = area.x + (area.width -| @as(u16, @intCast(help.len))) / 2;
+                buf.setString(help_x, footer_y, help, tui.Style{ .fg = .dark_gray });
 
                 const inner = tui.render.Rect{
                     .x = area.x + 1,
