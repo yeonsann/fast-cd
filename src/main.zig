@@ -13,10 +13,7 @@ fn min(a: usize, b: usize) usize {
 }
 
 fn initialPath(allocator: std.mem.Allocator) ![]const u8 {
-    const cwd = try std.process.getCwdAlloc(allocator);
-    // defer allocator.free(cwd);
-
-    return cwd;
+    return try std.process.getCwdAlloc(allocator);
 }
 
 fn byName(_: void, a: DirectoryItem, b: DirectoryItem) bool {
@@ -67,6 +64,7 @@ const AppState = struct {
     }
 
     pub fn loadDirectories(self: *AppState) !void {
+        self.selected = 0;
         self.clearDirectories();
 
         var it = self.cwd.iterate();
@@ -87,14 +85,6 @@ const AppState = struct {
         }
 
         std.mem.sortUnstable(DirectoryItem, self.directories.items, {}, byName);
-
-        // std.mem.sort(
-        //     []const u8,
-        //     self.directories.items,
-        //     {},
-        //     comptime std.sort.lexicographic(u8),
-        // );
-        self.selected = 0;
     }
 
     pub fn select(self: *AppState, dir: Direction) void {
@@ -143,10 +133,6 @@ const AppState = struct {
     }
 
     pub fn closeAndSwitchToDir(self: *AppState) !void {
-        // try std.process.chdir(self.cwd_path.items);
-        // try self.cwd.setAsCwd();
-        // self.cwd.close();
-        // self.cwd = try std.fs.cwd().openDir(".", .{ .iterate = true });
         var file = try std.fs.createFileAbsolute("/tmp/fcd_move_dir", .{ .truncate = true });
         defer file.close();
 
