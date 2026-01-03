@@ -19,6 +19,10 @@ fn initialPath(allocator: std.mem.Allocator) ![]const u8 {
     return cwd;
 }
 
+fn byName(_: void, a: DirectoryItem, b: DirectoryItem) bool {
+    return std.mem.lessThan(u8, a.name, b.name);
+}
+
 const AppState = struct {
     allocator: std.mem.Allocator,
 
@@ -67,11 +71,24 @@ const AppState = struct {
         var it = self.cwd.iterate();
         while (try it.next()) |entry| {
             if (entry.kind == .directory) {
-                const name = try self.allocator.dupe(u8, entry.name);
-                try self.directories.append(self.allocator, .{ .name = name });
+                if (entry.name.len > 0 and entry.name[0] == '.') {
+                    continue;
+                } else {
+                    const name = try self.allocator.dupe(u8, entry.name);
+
+                    try self.directories.append(self.allocator, .{ .name = name });
+                }
             }
         }
 
+        std.mem.sortUnstable(DirectoryItem, self.directories.items, {}, byName);
+
+        // std.mem.sort(
+        //     []const u8,
+        //     self.directories.items,
+        //     {},
+        //     comptime std.sort.lexicographic(u8),
+        // );
         self.selected = 0;
     }
 
