@@ -2,7 +2,24 @@ const std = @import("std");
 const tui = @import("zigtui");
 const builtin = @import("builtin");
 
+const Mode = enum { Normal, Search };
 const Direction = enum { Up, Down };
+
+fn filterSubsetBySubstring(
+    allocator: std.mem.Allocator,
+    list: *std.ArrayList([]const u8),
+    needle: []const u8,
+) !std.ArrayList([]const u8) {
+    var out = try std.ArrayList([]const u8).initCapacity(allocator, list.items.len);
+
+    for (list.items) |s| {
+        if (std.mem.indexOf(u8, s, needle) != null) {
+            try out.append(allocator, s);
+        }
+    }
+
+    return out;
+}
 
 const DirectoryItem = struct {
     name: []const u8,
@@ -23,6 +40,9 @@ fn byName(_: void, a: DirectoryItem, b: DirectoryItem) bool {
 const AppState = struct {
     allocator: std.mem.Allocator,
 
+    mode: Mode,
+    searchQuery: std.ArrayList(u8),
+
     cwd_path: std.ArrayList(u8), // absolute path
     cwd: std.fs.Dir,
 
@@ -32,6 +52,8 @@ const AppState = struct {
 
     pub fn init(allocator: std.mem.Allocator) !AppState {
         var path = try std.ArrayList(u8).initCapacity(allocator, 256);
+        const searchQuery = try std.ArrayList(u8).initCapacity(allocator, 256);
+
         const initial_path = try initialPath(allocator);
         defer allocator.free(initial_path);
         try path.appendSlice(allocator, initial_path);
@@ -42,6 +64,8 @@ const AppState = struct {
             .allocator = allocator,
             .cwd_path = path,
             .cwd = dir,
+            .mode = Mode.Normal,
+            .searchQuery = searchQuery,
             .directories = try std.ArrayList(DirectoryItem).initCapacity(allocator, 256),
         };
     }
@@ -51,7 +75,7 @@ const AppState = struct {
             self.allocator.free(item.name);
         }
         self.directories.deinit(self.allocator);
-
+        self.searchQuery.deinit(self.allocator);
         self.cwd_path.deinit(self.allocator);
         self.cwd.close();
     }
@@ -140,6 +164,22 @@ const AppState = struct {
         try file.writeAll(self.cwd_path.items);
         try file.writeAll("\"\n");
     }
+
+    pub fn loadFavorites(self: *AppState) !void {
+        var file = try std.fs.createFileAbsolute("~/.fcd_favorites", .{});
+        defer file.close();
+
+        const buffer: []u8 = try self.allocator.alloc(u8, 1024);
+        try file.readAll(buffer);
+        std.debug.print(buffer, .{});
+    }
+
+    pub fn addToFavorites(_: *AppState) !void {
+        var file = try std.fs.createFileAbsolute("~/.fcd_favorites", .{});
+        defer file.close();
+
+        try file.writeAll("/home/yeonsan/code/fastcd/");
+    }
 };
 
 pub fn main() !void {
@@ -165,25 +205,42 @@ pub fn main() !void {
         const event = try backend.interface().pollEvent(100);
 
         switch (event) {
-            .key => |key| switch (key.code) {
-                .char => |c| {
-                    if (c == 'q') running = false;
-                    if (c == 'j') state.select(.Up);
-                    if (c == 'k') state.select(.Down);
-
-                    if (c == 'H') {
-                        try state.toggleHiddenDirectories();
+            .key => |key| {
+                if (state.mode == Mode.Search) {
+                    switch (key.code) {
+                        .char => |c| {
+                            state.searchQuery.appendAssumeCapacity(@as(u8, @intCast(c)));
+                        },
+                        .esc => {
+                            state.searchQuery.clearRetainingCapacity();
+                            state.mode = Mode.Normal;
+                        },
+                        .backspace => {
+                            _ = state.searchQuery.pop();
+                        },
+                        else => {},
                     }
-
-                    if (c == 'o') {
-                        try state.closeAndSwitchToDir();
-                        running = false;
+                } else {
+                    switch (key.code) {
+                        .char => |c| {
+                            if (c == 'q') running = false;
+                            if (c == 'j') state.select(.Up);
+                            if (c == 'k') state.select(.Down);
+                            if (c == '/') state.mode = Mode.Search;
+                            if (c == 'H') {
+                                try state.toggleHiddenDirectories();
+                            }
+                            if (c == 'o') {
+                                try state.closeAndSwitchToDir();
+                                running = false;
+                            }
+                        },
+                        .enter => try state.enterSelected(),
+                        .backspace => try state.goUp(),
+                        .esc => running = false,
+                        else => {},
                     }
-                },
-                .enter => try state.enterSelected(),
-                .backspace => try state.goUp(),
-                .esc => running = false,
-                else => {},
+                }
             },
             else => {},
         }
@@ -198,45 +255,94 @@ pub fn main() !void {
         try terminal.draw(ctx, struct {
             fn render(draw_ctx: DrawContext, buf: *tui.render.Buffer) !void {
                 const app = draw_ctx.state;
-                const alloc = draw_ctx.allocator;
                 const area = buf.getArea();
 
-                const block = tui.widgets.Block{
+                const parent_block = tui.widgets.Block{};
+                const parent_inner = parent_block.inner(.{ .x = area.x, .y = area.y, .height = area.height, .width = area.width });
+                parent_block.render(area, buf);
+
+                const split = parent_inner.splitHorizontal(parent_inner.width / 2);
+                const left = split.left;
+                const right = split.right;
+
+                const left_block = tui.widgets.Block{
                     .title = app.cwd_path.items,
                     .borders = tui.widgets.Borders.all(),
                     .border_style = tui.style.Style{ .fg = .white },
                 };
-                block.render(area, buf);
+                left_block.render(left, buf);
 
-                const footer_y = area.y + area.height - 1;
-                const help = "[O] Change CWD [j/k] Navigate [Enter/Return] Enter / Leave Directory [H] Toggle hidden files [Q] Quit ";
-                const help_x = area.x + (area.width -| @as(u16, @intCast(help.len))) / 2;
-                buf.setString(help_x, footer_y, help, tui.Style{ .fg = .dark_gray });
-
-                const inner = tui.render.Rect{
-                    .x = area.x + 1,
-                    .y = area.y + 1,
-                    .width = area.width -| 2,
-                    .height = area.height -| 2,
+                const left_inner = tui.render.Rect{
+                    .x = left.x + 1,
+                    .y = left.y + 1,
+                    .width = left.width -| 2,
+                    .height = left.height -| 2,
                 };
 
-                const items = try alloc.alloc(tui.widgets.ListItem, app.directories.items.len);
-                defer alloc.free(items);
+                const right_block = tui.widgets.Block{
+                    .title = "History",
+                    .borders = tui.widgets.Borders.all(),
+                    .border_style = tui.style.Style{ .fg = .white },
+                };
+                right_block.render(right, buf);
 
-                for (app.directories.items, items) |src, *dst| {
-                    dst.* = .{ .content = src.name };
-                }
-
-                const list = tui.widgets.List{
-                    .items = items,
-                    .selected = app.selected,
-                    .highlight_style = tui.style.Style{ .bg = .blue },
+                _ = tui.render.Rect{
+                    .x = right.x + 1,
+                    .y = right.y + 1,
+                    .width = right.width -| 2,
+                    .height = right.height -| 2,
                 };
 
-                list.render(inner, buf);
+                try drawDirectoriesList(left_inner, buf, app);
+                try drawFooter(area, buf, app);
             }
         }.render);
     }
 
     try terminal.showCursor();
+}
+
+fn drawDirectoriesList(area: tui.Rect, buf: *tui.Buffer, state: *AppState) !void {
+    const alloc: std.mem.Allocator = state.allocator;
+    var tmpList = try std.ArrayList([]const u8).initCapacity(alloc, state.directories.items.len);
+    defer tmpList.deinit(alloc);
+
+    for (state.directories.items) |item| {
+        try tmpList.append(alloc, item.name);
+    }
+
+    var filtered = try filterSubsetBySubstring(alloc, &tmpList, state.searchQuery.items);
+    defer filtered.deinit(alloc);
+
+    const items = try alloc.alloc(tui.widgets.ListItem, filtered.items.len);
+    defer alloc.free(items);
+
+    for (filtered.items, items) |src, *dst| {
+        dst.* = .{ .content = src };
+    }
+
+    const list = tui.widgets.List{
+        .items = items,
+        .selected = state.selected,
+        .highlight_style = tui.style.Style{ .bg = .blue },
+    };
+
+    list.render(area, buf);
+}
+
+fn drawFooter(area: tui.Rect, buf: *tui.Buffer, state: *AppState) !void {
+    // Render footer
+    const footer_y = area.y + area.height - 1;
+
+    var help: []u8 = undefined;
+    defer state.allocator.free(help);
+
+    if (state.mode == Mode.Search) {
+        help = try std.fmt.allocPrint(state.allocator, "Search: {s}", .{state.searchQuery.items});
+    } else {
+        help = try std.fmt.allocPrint(state.allocator, "[O] Change CWD [j/k] Navigate [Enter/Return] Enter / Leave Directory [H] Toggle hidden files [Q] Quit ", .{});
+    }
+
+    const help_x = area.x + (area.width -| @as(u16, @intCast(help.len))) / 2;
+    buf.setString(help_x, footer_y, help, tui.Style{ .fg = .dark_gray });
 }
